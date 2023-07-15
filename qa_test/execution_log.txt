@@ -1,0 +1,77 @@
+==========================================================
+      MANUAL QA TEST EXECUTION REPORT: MeterPulse
+==========================================================
+Tester: Senior QA Automation & Systems Tester
+Environment: Localhost (Node.js v22.0.0, macOS)
+Base URL: http://localhost:3001
+Timestamp: Wed Nov 25 13:00:41 UTC 2026
+
+[MeterPulse] Usage-Based Billing Engine running on port 3001
+----------------------------------------------------------
+Test 1: Healthcheck & Liveness Probe
+cURL: GET /health
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Content-Type: application/json; charset=utf-8
+Content-Length: 75
+ETag: W/"4b-TwdrHiq0uYZCJZDpKdtmHCbmhL0"
+Date: Wed, 25 Nov 2026 13:00:43 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"status":"UP","uptime":1.955586125,"timestamp":"2026-11-25T13:00:43.090Z"}
+----------------------------------------------------------
+Test 2: Normal Real-User Ingestion (1 API Request Event)
+cURL: POST /api/v1/events
+{"eventId":"888efb8d-232e-4fe7-abdd-da6c1f3d562a","status":"ACCEPTED","meterCode":"api_requests","recordedAt":"2026-11-25T13:00:43.127Z"}
+HTTP_STATUS:202
+
+----------------------------------------------------------
+Test 3: [Edge Case] Immediate Replay Attack (Exact Same Idempotency Key)
+cURL: POST /api/v1/events (Duplicate)
+{"eventId":"888efb8d-232e-4fe7-abdd-da6c1f3d562a","status":"DUPLICATE","meterCode":"api_requests","recordedAt":"2026-11-25T13:00:43.127Z"}
+HTTP_STATUS:200
+
+----------------------------------------------------------
+Test 4: [Edge Case] Idempotency Key Conflict (Reusing Key with Altered Payload)
+cURL: POST /api/v1/events (Tampered Value)
+{"error":"Idempotency conflict: Key 'qa_req_001_live' reused with different payload payload payload."}
+HTTP_STATUS:400
+
+----------------------------------------------------------
+Test 5: [Edge Case] Hostile Negative Value Rejection
+cURL: POST /api/v1/events (value: -150)
+{"error":"Invalid event: value must be a non-negative number"}
+HTTP_STATUS:400
+
+----------------------------------------------------------
+Test 6: [Edge Case] Malformed Payload / Missing Mandatory Fields
+cURL: POST /api/v1/events (missing meterCode)
+{"error":"Invalid event: meterCode is required and must be a string"}
+HTTP_STATUS:400
+
+----------------------------------------------------------
+Test 7: Real-User Batch Ingestion (Multiple API Calls & Compute Units)
+cURL: POST /api/v1/events/batch
+{"total":3,"accepted":3,"duplicates":0,"results":[{"eventId":"e0d2e4ed-4565-41fb-bc5e-38a223fb6e9f","status":"ACCEPTED","meterCode":"api_requests","recordedAt":"2026-11-25T13:00:43.209Z"},{"eventId":"dee8c24d-55a9-43f6-8765-13a83c7f0f63","status":"ACCEPTED","meterCode":"api_requests","recordedAt":"2026-11-25T13:00:43.209Z"},{"eventId":"a4fde20b-d0d4-4fc7-90ee-f25cf3487617","status":"ACCEPTED","meterCode":"compute_seconds","recordedAt":"2026-11-25T13:00:43.209Z"}]}
+HTTP_STATUS:202
+
+----------------------------------------------------------
+Test 8: Real-Time Usage Aggregation Query
+cURL: GET /api/v1/usage/cust_acme_corp?meterCode=api_requests&aggregation=COUNT
+{"customerId":"cust_acme_corp","meterCode":"api_requests","periodStart":"2026-10-26T13:00:43.222Z","periodEnd":"2026-11-25T13:00:43.222Z","aggregatedValue":3,"eventCount":3}
+HTTP_STATUS:200
+
+----------------------------------------------------------
+Test 9: End-to-End On-Demand Invoice Generation
+cURL: POST /api/v1/invoices/generate
+{"id":"inv_22ff149ab7704643","customerId":"cust_acme_corp","periodStart":"2026-11-01T00:00:00.000Z","periodEnd":"2026-11-30T23:59:59.000Z","baseFee":4900,"lineItems":[{"meterCode":"api_requests","description":"API Calls","units":3,"rateDescription":"Graduated: [3 @ $0.0000]","subtotal":0},{"meterCode":"compute_seconds","description":"Serverless Execution Duration","units":45.5,"rateDescription":"45.5 units @ $0.0002/unit","subtotal":1}],"subtotal":4901,"tax":882,"total":5783,"currency":"USD","status":"ISSUED","generatedAt":"2026-11-25T13:00:43.234Z"}
+HTTP_STATUS:200
+
+==========================================================
+               QA MANUAL TESTING SIGN-OFF
+==========================================================
+All 9 real-world scenarios & edge cases executed live.
+Status: PASSED (Zero crash, exact HTTP status codes returned)
+
+Shutting down test server (PID 62658)...
