@@ -1,11 +1,16 @@
 import { PricingEngine } from '../src/services/PricingEngine';
 import { MetricPlan } from '../src/types';
+import { EventIngestionService } from '../src/services/EventIngestionService';
+import { EventStore } from '../src/storage/EventStore';
+import { IdempotencyStore } from '../src/storage/IdempotencyStore';
 
 describe('PricingEngine', () => {
   let pricingEngine: PricingEngine;
+  let ingestionService: EventIngestionService;
 
   beforeEach(() => {
     pricingEngine = new PricingEngine();
+    ingestionService = new EventIngestionService(new EventStore(), new IdempotencyStore());
   });
 
   test('calculates graduated pricing across multiple brackets accurately', () => {
@@ -63,5 +68,39 @@ describe('PricingEngine', () => {
 
     const res = pricingEngine.calculateCharge(plan, 0);
     expect(res.subtotal).toBe(0);
+  });
+
+  test('rejects negative usage values with schema validation error', () => {
+    expect(() => {
+      ingestionService.ingest({
+        idempotencyKey: 'neg_test',
+        customerId: 'cust_1',
+        meterCode: 'api_calls',
+        value: -10,
+        timestamp: new Date().toISOString()
+      });
+    }).toThrow(/non-negative/);
+  });
+
+  test('handles exact boundary thresholds without off-by-one errors in graduated tiers', () => {
+    const plan = {
+      meterCode: 'api_calls',
+      name: 'API Calls',
+      aggregation: 'COUNT' as const,
+      pricingModel: 'TIERED_GRADUATED' as const,
+      tiers: [
+        { upTo: 1000, unitPrice: 10 },
+        { upTo: 5000, unitPrice: 5 },
+        { upTo: null, unitPrice: 2 }
+      ]
+    };
+
+    // Exactly 1000 units: should be exactly 1000 * 10 = 10000
+    const resExact1k = pricingEngine.calculateCharge(plan, 1000);
+    expect(resExact1k.subtotal).toBe(10000);
+
+    // Exactly 1001 units: 1000 * 10 + 1 * 5 = 10005
+    const res1001 = pricingEngine.calculateCharge(plan, 1001);
+    expect(res1001.subtotal).toBe(10005);
   });
 });
